@@ -1,7 +1,9 @@
+import json
 from typing import Any
 
 import flask
 import flask_restful
+from flask import request
 
 from src.app.exceptions import RepositoryError
 from src.app.service import AbstractProblemService
@@ -20,12 +22,25 @@ class ProblemService(AbstractProblemService):
         self.hash = HashCalculator()
 
     def create_problem(self) -> tuple[dict[str, Any], int]:
-        data = flask.request.get_json(force=True)
-        header = data.get("header")
-        body = data.get("body")
+        header_raw = request.headers.get("X-Request-Header")
+        if not header_raw:
+            return {"message": "Отсутствует X-Request-Header"}, 400
 
-        if not isinstance(header, dict) or not isinstance(body, dict):
-            flask_restful.abort(400, message="Ожидаются объекты header и body")
+        try:
+            header = json.loads(header_raw)
+        except json.JSONDecodeError:
+            return {"message": "Некорректный JSON в X-Request-Header"}, 400
+
+        if not isinstance(header, dict):
+            return {"message": "Header должен быть объектом"}, 400
+
+        try:
+            body = request.get_json(force=True)
+        except Exception:
+            return {"message": "Некорректный JSON в теле"}, 400
+
+        if not isinstance(body, dict):
+            return {"message": "Body должен быть объектом"}, 400
 
         h = self.hash.compute(header, body)
         try:
@@ -71,7 +86,7 @@ class ProblemService(AbstractProblemService):
 
         results = [
             {
-                "id": str(d["_id"]),
+                "id": d["_id"],
                 "hash": d["hash"],
                 "header": d["header"],
                 "body": d["body"],
